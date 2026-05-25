@@ -1,7 +1,9 @@
-# IS2026 Spring - NAME OF PROJECT
+# IS2026 Spring - Colourblind Glove
 
 Describe the project.
+Uses a colour sensor to find the colour of an object. The user can use a laser to help them point the laser towards their target, then use the sensor to find the colour. The closest colour shade is shown on an OLED screen.
 Describe what are the contents of each folder - CODE, CAD, Electronics etc
+The CAD folder
 
 
 ## License
@@ -25,6 +27,6 @@ MIT open source [license](http://opensource.org/licenses/MIT).
 
 > _List team members and contact emails or GitHub profiles._
 [@anool](https://github.com/Anool)
-> 
->
-> ---
+> chris.soans.uc@gmail.com 
+> aarohdas@gmail.com MakersAsylumAD
+> kejriwalarjun2010@gmail.com ARJUN729527
