@@ -1,0 +1,538 @@
+#include <Arduino.h>
+#include <Wire.h>
+#include <Adafruit_TCS34725.h>
+#include <U8g2lib.h>
+
+#define SDA_PIN 21
+#define SCL_PIN 22
+
+Adafruit_TCS34725 tcs = Adafruit_TCS34725(
+    TCS34725_INTEGRATIONTIME_50MS,
+    TCS34725_GAIN_4X
+);
+
+U8G2_SSD1306_128X64_NONAME_F_HW_I2C u8g2(
+    U8G2_R0,
+    U8X8_PIN_NONE
+);
+
+struct Color {
+    const char* name;
+    float r;
+    float g;
+    float b;
+};
+
+const Color COLOR_DB[] = {
+
+    { "Light Red",     0.65, 0.20, 0.15 },
+    { "Red",           0.78, 0.12, 0.10 },
+    { "Dark Red",      0.85, 0.08, 0.07 },
+
+    { "Light Yellow",  0.42, 0.42, 0.16 },
+    { "Yellow",        0.48, 0.45, 0.07 },
+    { "Dark Yellow",   0.52, 0.40, 0.08 },
+
+    { "Light Blue",    0.18, 0.30, 0.52 },
+    { "Blue",          0.10, 0.25, 0.65 },
+    { "Dark Blue",     0.07, 0.13, 0.80 },
+
+    { "Light Orange",  0.55, 0.32, 0.13 },
+    { "Orange",        0.68, 0.25, 0.07 },
+    { "Dark Orange",   0.76, 0.18, 0.06 },
+
+    { "Light Green",   0.20, 0.60, 0.20 },
+    { "Green",         0.12, 0.70, 0.18 },
+    { "Dark Green",    0.08, 0.78, 0.14 },
+
+    { "Light Purple",  0.40, 0.20, 0.40 },
+    { "Purple",        0.44, 0.12, 0.44 },
+    { "Dark Purple",   0.43, 0.08, 0.49 },
+
+    { "Light Brown",   0.52, 0.32, 0.16 },
+    { "Brown",         0.62, 0.26, 0.12 },
+    { "Dark Brown",    0.70, 0.20, 0.10 },
+
+    { "Black",         0.333, 0.333, 0.333 },
+    { "White",         0.333, 0.333, 0.333 },
+    { "Grey",          0.333, 0.333, 0.333 }
+};
+
+const int COLOR_DB_SIZE =
+    sizeof(COLOR_DB) / sizeof(COLOR_DB[0]);
+
+float lightR = 0.3333;
+float lightG = 0.3333;
+float lightB = 0.3333;
+
+void calibrateLight() {
+
+    uint16_t r, g, b, c;
+
+    float sumR = 0;
+    float sumG = 0;
+    float sumB = 0;
+
+    const int samples = 30;
+
+    for (int i = 0; i < samples; i++) {
+
+        tcs.getRawData(&r, &g, &b, &c);
+
+        float total =
+            (float)r +
+            (float)g +
+            (float)b;
+
+        if (total < 1)
+            total = 1;
+
+        sumR += r / total;
+        sumG += g / total;
+        sumB += b / total;
+
+        delay(30);
+    }
+
+    lightR = sumR / samples;
+    lightG = sumG / samples;
+    lightB = sumB / samples;
+
+    float average =
+        (lightR + lightG + lightB) / 3.0;
+
+    lightR = average / lightR;
+    lightG = average / lightG;
+    lightB = average / lightB;
+}
+
+const char* getColorName(
+    uint8_t r,
+    uint8_t g,
+    uint8_t b,
+    uint16_t clearValue
+) {
+
+    float R = r;
+    float G = g;
+    float B = b;
+
+    R *= lightR;
+    G *= lightG;
+    B *= lightB;
+
+    float total =
+        R + G + B;
+
+    if (total <= 0.5)
+        return "Black";
+
+    float rn = R / total;
+    float gn = G / total;
+    float bn = B / total;
+
+    float maximum =
+        max(rn, max(gn, bn));
+
+    float minimum =
+        min(rn, min(gn, bn));
+
+    float spread =
+        maximum - minimum;
+
+    float brightness =
+        (R + G + B) / 3.0;
+
+    if (clearValue < 8)
+        return "Black";
+
+    if (
+        spread < 0.055 &&
+        maximum > 0.31
+    ) {
+
+        if (clearValue > 180)
+            return "White";
+
+        if (clearValue < 35)
+            return "Black";
+
+        return "Grey";
+    }
+
+    if (
+        rn > 0.31 &&
+        gn > 0.31 &&
+        bn > 0.31 &&
+        spread < 0.09
+    ) {
+
+        if (clearValue > 180)
+            return "White";
+
+        return "Grey";
+    }
+
+    if (bn >= rn && bn >= gn) {
+
+        if (
+            rn > 0.25 &&
+            rn > gn * 0.90
+        ) {
+
+            float purpleAmount =
+                (rn + bn) / 2.0;
+
+            if (purpleAmount > 0.43)
+                return "Light Purple";
+
+            if (purpleAmount > 0.31)
+                return "Purple";
+
+            return "Dark Purple";
+        }
+
+        if (gn > rn) {
+
+            if (bn > 0.48)
+                return "Light Blue";
+
+            if (bn > 0.36)
+                return "Blue";
+
+            return "Dark Blue";
+        }
+
+        if (bn > 0.48)
+            return "Light Blue";
+
+        if (bn > 0.34)
+            return "Blue";
+
+        return "Dark Blue";
+    }
+
+    if (rn >= gn && rn >= bn) {
+
+        if (gn > bn) {
+
+            if (
+                gn > rn * 0.72 &&
+                bn < gn * 0.55
+            ) {
+
+                if (rn > 0.39)
+                    return "Light Yellow";
+
+                if (rn > 0.34)
+                    return "Yellow";
+
+                return "Dark Yellow";
+            }
+
+            if (
+                gn > rn * 0.34 &&
+                gn < rn * 0.76 &&
+                bn < gn * 0.75
+            ) {
+
+                if (rn > 0.47)
+                    return "Light Orange";
+
+                if (rn > 0.39)
+                    return "Orange";
+
+                return "Dark Orange";
+            }
+
+            if (
+                gn > rn * 0.27 &&
+                bn > rn * 0.08 &&
+                bn < gn * 0.85
+            ) {
+
+                if (rn > 0.43)
+                    return "Light Brown";
+
+                if (rn > 0.34)
+                    return "Brown";
+
+                return "Dark Brown";
+            }
+        }
+
+        if (
+            bn > rn * 0.27 &&
+            bn > gn * 1.10
+        ) {
+
+            if (rn > 0.38)
+                return "Light Purple";
+
+            if (rn > 0.27)
+                return "Purple";
+
+            return "Dark Purple";
+        }
+
+        if (rn > 0.60)
+            return "Light Red";
+
+        if (rn > 0.45)
+            return "Red";
+
+        return "Dark Red";
+    }
+
+    if (gn >= rn && gn >= bn) {
+
+        if (rn > bn) {
+
+            if (
+                rn > gn * 0.68 &&
+                bn < rn * 0.65
+            ) {
+
+                if (gn > 0.40)
+                    return "Light Yellow";
+
+                if (gn > 0.32)
+                    return "Yellow";
+
+                return "Dark Yellow";
+            }
+
+            if (
+                rn > gn * 0.28 &&
+                bn < rn * 0.80
+            ) {
+
+                if (gn > 0.45)
+                    return "Light Brown";
+
+                if (gn > 0.33)
+                    return "Brown";
+
+                return "Dark Brown";
+            }
+        }
+
+        if (bn > 0.35) {
+
+            if (gn > bn * 1.08) {
+
+                if (gn > 0.50)
+                    return "Light Green";
+
+                if (gn > 0.38)
+                    return "Green";
+
+                return "Dark Green";
+            }
+
+            if (gn >= bn * 0.92) {
+
+                if (gn > 0.47)
+                    return "Light Green";
+
+                if (gn > 0.35)
+                    return "Green";
+
+                return "Dark Green";
+            }
+        }
+
+        if (gn > 0.50)
+            return "Light Green";
+
+        if (gn > 0.37)
+            return "Green";
+
+        return "Dark Green";
+    }
+
+    float bestDistance = 999.0;
+    int bestIndex = 0;
+
+    for (int i = 0; i < COLOR_DB_SIZE - 3; i++) {
+
+        float dr = rn - COLOR_DB[i].r;
+        float dg = gn - COLOR_DB[i].g;
+        float db = bn - COLOR_DB[i].b;
+
+        float distance =
+            (dr * dr) +
+            (dg * dg) +
+            (db * db);
+
+        if (distance < bestDistance) {
+
+            bestDistance = distance;
+            bestIndex = i;
+        }
+    }
+
+    return COLOR_DB[bestIndex].name;
+}
+
+void setup() {
+
+    Serial.begin(115200);
+
+    Wire.begin(
+        SDA_PIN,
+        SCL_PIN
+    );
+
+    u8g2.begin();
+
+    u8g2.setFont(
+        u8g2_font_6x12_tf
+    );
+
+    u8g2.clearBuffer();
+
+    u8g2.drawStr(
+        15,
+        30,
+        "STARTING..."
+    );
+
+    u8g2.sendBuffer();
+
+    delay(1000);
+
+    if (!tcs.begin()) {
+
+        u8g2.clearBuffer();
+
+        u8g2.drawStr(
+            10,
+            30,
+            "TCS FAIL"
+        );
+
+        u8g2.sendBuffer();
+
+        while (1);
+    }
+
+    u8g2.clearBuffer();
+
+    u8g2.drawStr(
+        5,
+        25,
+        "CALIBRATING"
+    );
+
+    u8g2.drawStr(
+        5,
+        43,
+        "KEEP SENSOR EMPTY"
+    );
+
+    u8g2.sendBuffer();
+
+    delay(1000);
+
+    calibrateLight();
+
+    u8g2.clearBuffer();
+
+    u8g2.drawStr(
+        20,
+        30,
+        "SYSTEM OK"
+    );
+
+    u8g2.sendBuffer();
+
+    delay(1000);
+}
+
+void loop() {
+
+    uint16_t r;
+    uint16_t g;
+    uint16_t b;
+    uint16_t c;
+
+    tcs.getRawData(
+        &r,
+        &g,
+        &b,
+        &c
+    );
+
+    if (c == 0)
+        c = 1;
+
+    uint8_t red =
+        constrain(
+            (r * 255UL) / c,
+            0UL,
+            255UL
+        );
+
+    uint8_t green =
+        constrain(
+            (g * 255UL) / c,
+            0UL,
+            255UL
+        );
+
+    uint8_t blue =
+        constrain(
+            (b * 255UL) / c,
+            0UL,
+            255UL
+        );
+
+    const char* colorName =
+        getColorName(
+            red,
+            green,
+            blue,
+            c
+        );
+
+    char rgbLine[32];
+
+    snprintf(
+        rgbLine,
+        sizeof(rgbLine),
+        "R:%d G:%d B:%d",
+        red,
+        green,
+        blue
+    );
+
+    Serial.println("--------------------");
+    Serial.println(rgbLine);
+    Serial.print("Color: ");
+    Serial.println(colorName);
+
+    u8g2.clearBuffer();
+
+    u8g2.drawStr(
+        10,
+        12,
+        "COLOR SCANNER"
+    );
+
+    u8g2.drawStr(
+        10,
+        30,
+        rgbLine
+    );
+
+    u8g2.drawStr(
+        10,
+        52,
+        colorName
+    );
+
+    u8g2.sendBuffer();
+
+    delay(700);
+}
